@@ -2,23 +2,18 @@
 using System.ComponentModel;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Net.Http;
+using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace UiPathTeam.OrchestratorMaintenanceMode
 {
-    public class MaintenanceClient : IDisposable, INotifyPropertyChanged
+    public class MaintenanceClient : INotifyPropertyChanged
     {
         #region FIELDS
 
-        private HttpClient _httpClient = new HttpClient();
+        private MaintenanceNetClient _netClient = new MaintenanceNetClient();
         private PersistentStore _ps = new PersistentStore();
-        private string _url;
-        private string _tenancyName;
-        private string _userName;
-        private string _password;
-        private string _authToken;
         private string _statusText;
 
         #endregion
@@ -31,21 +26,21 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
         {
             get
             {
-                return _url;
+                return _netClient.Url;
             }
             set
             {
-                if (_url != value)
+                if (_netClient.Url != value)
                 {
-                    _url = value;
+                    _netClient.Url = value;
                     NotifyPropertyChanged(nameof(Url));
                     OnCredentialsChanged();
-                    _ps.FindCredentials(_url, (url, tenancyname, username, password, token) =>
+                    _ps.FindCredentials(_netClient.Url, (url, tenancyname, username, password, token) =>
                     {
-                        _tenancyName = tenancyname;
-                        _userName = username;
-                        _password = password;
-                        _authToken = string.IsNullOrEmpty(token) ? null : token;
+                        _netClient.TenancyName = tenancyname;
+                        _netClient.UserName = username;
+                        _netClient.Password = password;
+                        _netClient.AuthToken = token;
                         NotifyPropertyChanged(nameof(TenancyName));
                         NotifyPropertyChanged(nameof(UserName));
                         NotifyPropertyChanged(nameof(Password));
@@ -58,13 +53,13 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
         {
             get
             {
-                return _tenancyName;
+                return _netClient.TenancyName;
             }
             set
             {
-                if (_tenancyName != value)
+                if (_netClient.TenancyName != value)
                 {
-                    _tenancyName = value;
+                    _netClient.TenancyName = value;
                     OnCredentialsChanged();
                 }
             }
@@ -74,13 +69,13 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
         {
             get
             {
-                return _userName;
+                return _netClient.UserName;
             }
             set
             {
-                if (_userName != value)
+                if (_netClient.UserName != value)
                 {
-                    _userName = value;
+                    _netClient.UserName = value;
                     OnCredentialsChanged();
                 }
             }
@@ -90,13 +85,13 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
         {
             get
             {
-                return _password;
+                return _netClient.Password;
             }
             set
             {
-                if (_password != value)
+                if (_netClient.Password != value)
                 {
-                    _password = value;
+                    _netClient.Password = value;
                     OnCredentialsChanged();
                 }
             }
@@ -106,7 +101,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
 
         public bool IsKillJobsEnabled { get; set; }
 
-        public MaintenanceState State { get; private set; }
+        public MaintenanceState State => _netClient.State;
 
         public string StatusText
         {
@@ -128,14 +123,8 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
         public MaintenanceClient()
         {
             UrlList = new List<string>();
-            _url = string.Empty;
-            _tenancyName = "host";
-            _userName = "admin";
-            _password = string.Empty;
             IsForceEnabled = false;
             IsKillJobsEnabled = false;
-            _authToken = null;
-            State = MaintenanceState.UNAVAILABLE;
             StatusText = string.Empty;
             Logs = new ObservableCollection<LogRecord>();
             _ps.Load();
@@ -145,17 +134,12 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             });
             _ps.FindLastCredentials((url, tenancyname, username, password, token) =>
             {
-                _url = url;
-                _tenancyName = tenancyname;
-                _userName = username;
-                _password = password;
-                _authToken = string.IsNullOrEmpty(token) ? null : token;
+                _netClient.Url = url;
+                _netClient.TenancyName = tenancyname;
+                _netClient.UserName = username;
+                _netClient.Password = password;
+                _netClient.AuthToken = token;
             });
-        }
-
-        public void Dispose()
-        {
-            _httpClient.Dispose();
         }
 
         #region CALLBACKS
@@ -167,8 +151,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
 
         private void OnCredentialsChanged()
         {
-            _authToken = null;
-            State = MaintenanceState.UNAVAILABLE;
+            _netClient.AuthToken = null;
             StatusText = string.Empty;
             Logs.Clear();
         }
@@ -179,314 +162,261 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
 
         public async Task<bool> Authenticate()
         {
+            var name = "Authentication";
             try
             {
-                StatusText = "Authenticating...";
-                Logs.Clear();
+                StatusRequesting(name);
                 UserName = UserName.Trim();
-                _authToken = null;
-                State = MaintenanceState.UNAVAILABLE;
-                var uri = string.Format("{0}/api/Account", Url);
-                var json = string.Format("{{\"tenancyName\":\"{0}\",\"usernameOrEmailAddress\":\"{1}\",\"password\":\"{2}\"}}", TenancyName, UserName, Password);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                var response = await _httpClient.PostAsync(uri, content);
-                var responseBody = await response.Content.ReadAsStringAsync();
-                if (response.StatusCode == System.Net.HttpStatusCode.OK)
+                if (await _netClient.Authenticate())
                 {
-                    try
-                    {
-                        var rspx = JsonAuthenticateResponse.Parse(responseBody);
-                        _authToken = rspx.Result;
-                        StatusText = "Authentication succeeded.";
-                    }
-                    catch (Exception ex)
-                    {
-                        OnException(ex, "Authentication succeeded: Unexpected response.", responseBody);
-                    }
-                    AddCredentials();
+                    StatusSucceeded(name);
                     return true;
                 }
                 else
                 {
-                    try
-                    {
-                        var rspx = JsonErrorResponse.Parse(responseBody);
-                        OnErrorResponse(response, rspx, "Authentication failed.");
-                    }
-                    catch (Exception ex)
-                    {
-                        OnException(ex, "Authentication failed: Unexpected response.", responseBody);
-                    }
-                    AddCredentials();
-                    return false;
+                    OnErrorResponse(name);
                 }
             }
             catch (Exception ex)
             {
-                OnException(ex, "Authentication failed.");
-                AddCredentials();
-                return false;
+                OnException(ex, name);
             }
+            finally
+            {
+                UpdateCredentialsInPersistentStore();
+            }
+            return false;
         }
 
-        private void AddCredentials()
+        public async Task<bool> Get(bool canRetry = true)
         {
-            _ps.AddCredentials(Url, TenancyName, UserName, Password, _authToken);
-            if (!UrlList.Contains(Url))
+            var name = "Get";
+            if (_netClient.HasAuthToken)
             {
-                UrlList.Add(Url);
-                NotifyPropertyChanged(nameof(UrlList));
-            }
-        }
-
-        public async Task<bool> Get(bool authIfNeeded = true)
-        {
-            if (_authToken == null)
-            {
-                if (!authIfNeeded)
+                try
                 {
-                    throw new InvalidOperationException("AuthToken=null authIfNeeded=false");
+                    StatusRequesting(name);
+                    switch (await _netClient.Get())
+                    {
+                        case HttpStatusCode.OK:
+                            StatusText = string.Format(
+                                "Current Mode={0}\nJob: Stops attempted={1} Kills attempted={2}\nTriggers skipped={3}\nSystem triggers skipped={4}",
+                                Enum.GetName(typeof(MaintenanceState), _netClient.State),
+                                _netClient.Maintenance.JobStopsAttempted,
+                                _netClient.Maintenance.JobKillsAttempted,
+                                _netClient.Maintenance.TriggersSkipped,
+                                _netClient.Maintenance.SystemTriggersSkipped);
+                            foreach (var record in _netClient.Maintenance.Logs)
+                            {
+                                Logs.Add(new LogRecord(record));
+                            }
+                            return true;
+                        case HttpStatusCode.Unauthorized:
+                            if (canRetry)
+                            {
+                                if (await Authenticate())
+                                {
+                                    return await Get(false);
+                                }
+                            }
+                            else
+                            {
+                                OnErrorResponse(name);
+                            }
+                            break;
+                        default:
+                            OnErrorResponse(name);
+                            break;
+                    }
                 }
+                catch (Exception ex)
+                {
+                    OnException(ex, name);
+                }
+                finally
+                {
+                    UpdateCredentialsInPersistentStore();
+                }
+            }
+            else if (canRetry)
+            {
                 if (await Authenticate())
                 {
-                    authIfNeeded = false;
-                }
-                else
-                {
-                    return false;
+                    return await Get(false);
                 }
             }
-            try
+            else
             {
-                StatusText = "Requesting Get...";
-                Logs.Clear();
-                State = MaintenanceState.UNAVAILABLE;
-                var uri = string.Format("{0}/api/Maintenance/Get", Url);
-                var request = new HttpRequestMessage(HttpMethod.Get, uri);
-                request.Headers.Add(@"Authorization", "Bearer " + _authToken);
-                var response = await _httpClient.SendAsync(request);
-                if (response.StatusCode == System.Net.HttpStatusCode.OK)
-                {
-                    var responseBody = await response.Content.ReadAsStringAsync();
-                    try
-                    {
-                        var maintenance = JsonMaintenanceResponse.Parse(await response.Content.ReadAsStringAsync());
-                        State = maintenance.State;
-                        StatusText = string.Format(
-                            "Current Mode={0}\nJob: Stops attempted={1} Kills attempted={2}\nTriggers skipped={3}\nSystem triggers skipped={4}",
-                            Enum.GetName(typeof(MaintenanceState), maintenance.State),
-                            maintenance.JobStopsAttempted,
-                            maintenance.JobKillsAttempted,
-                            maintenance.TriggersSkipped,
-                            maintenance.SystemTriggersSkipped);
-                        foreach (var record in maintenance.Logs)
-                        {
-                            Logs.Add(new LogRecord(record));
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        OnException(ex, "Get succeeded: Unexpected response.", responseBody);
-                    }
-                    return true;
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && authIfNeeded)
-                {
-                    if (await Authenticate())
-                    {
-                        return await Get(false);
-                    }
-                    else
-                    {
-                        return false;
-                    }
-                }
-                else
-                {
-                    var responseBody = await response.Content.ReadAsStringAsync();
-                    try
-                    {
-                        var rspx = JsonErrorResponse.Parse(responseBody);
-                        OnErrorResponse(response, rspx, "Get failed.");
-                    }
-                    catch (Exception ex)
-                    {
-                        OnException(ex, "Get failed: Unexpected response.", responseBody);
-                    }
-                    return false;
-                }
+                StatusFailed(name);
             }
-            catch (Exception ex)
-            {
-                OnException(ex, "Get failed.");
-                return false;
-            }
+            return false;
         }
 
-        public async Task<bool> Start(bool authIfNeeded = true)
+        public async Task<bool> StartDraining(bool canRetry = true)
         {
-            if (_authToken == null)
+            var name = "Start(Draining)";
+            if (_netClient.HasAuthToken)
             {
-                if (!authIfNeeded)
+                try
                 {
-                    throw new InvalidOperationException("AuthToken=null authIfNeeded=false");
+                    StatusRequesting(name);
+                    switch (await _netClient.StartDraining())
+                    {
+                        case HttpStatusCode.NoContent:
+                            StatusSucceeded(name);
+                            return true;
+                        case HttpStatusCode.Unauthorized:
+                            if (canRetry)
+                            {
+                                if (await Authenticate())
+                                {
+                                    return await StartDraining(false);
+                                }
+                            }
+                            else
+                            {
+                                OnErrorResponse(name);
+                            }
+                            break;
+                        default:
+                            OnErrorResponse(name);
+                            break;
+                    }
                 }
-                if (await Authenticate())
+                catch (Exception ex)
                 {
-                    authIfNeeded = false;
-                }
-                else
-                {
-                    return false;
+                    OnException(ex, name);
                 }
             }
-            try
+            else if (canRetry)
             {
-                var uri = string.Format("{0}/api/Maintenance/Start", Url);
-                if (State == MaintenanceState.DRAINING)
+                if (await Authenticate())
                 {
-                    uri += "?phase=Suspended";
-                    StatusText = "Requesting Start phase=Suspended...";
+                    return await StartDraining(false);
+                }
+            }
+            else
+            {
+                StatusFailed(name);
+            }
+            return false;
+        }
+
+        public async Task<bool> StartSuspended(bool canRetry = true)
+        {
+            var name = "Start(Suspended)";
+            if (_netClient.HasAuthToken)
+            {
+                try
+                {
                     if (IsForceEnabled)
                     {
-                        uri += "&force=true";
-                        StatusText = StatusText.Replace("...", " force=true...");
+                        name = name.Replace(")", "/Force)");
                     }
                     if (IsKillJobsEnabled)
                     {
-                        uri += "&killJobs=true";
-                        StatusText = StatusText.Replace("...", " killJobs=true...");
+                        name = name.Replace(")", "/KillJobs)");
+                    }
+                    StatusRequesting(name);
+                    switch (await _netClient.StartSuspended(IsForceEnabled, IsKillJobsEnabled))
+                    {
+                        case HttpStatusCode.NoContent:
+                            StatusSucceeded(name);
+                            return true;
+                        case HttpStatusCode.Unauthorized:
+                            if (canRetry)
+                            {
+                                if (await Authenticate())
+                                {
+                                    return await StartSuspended(false);
+                                }
+                            }
+                            else
+                            {
+                                OnErrorResponse(name);
+                            }
+                            break;
+                        default:
+                            OnErrorResponse(name);
+                            break;
                     }
                 }
-                else
+                catch (Exception ex)
                 {
-                    uri += "?phase=Draining";
-                    StatusText = "Requesting Start phase=Draining...";
-                }
-                var request = new HttpRequestMessage(HttpMethod.Post, uri);
-                request.Headers.Add(@"Authorization", "Bearer " + _authToken);
-                var response = await _httpClient.SendAsync(request);
-                if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
-                {
-                    StatusText = string.Format("Start phase={0} succeeded.", State == MaintenanceState.DRAINING ? "Suspended" : "Draining");
-                    return true;
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && authIfNeeded)
-                {
-                    if (!await Authenticate())
-                    {
-                        return false;
-                    }
-                    else if (!await Get(false))
-                    {
-                        return false;
-                    }
-                    else if (State == MaintenanceState.NONE || State == MaintenanceState.DRAINING)
-                    {
-                        return await Start(false);
-                    }
-                    else if (State == MaintenanceState.SUSPENDED)
-                    {
-                        return true;
-                    }
-                    else
-                    {
-                        return false;
-                    }
-                }
-                else
-                {
-                    var responseBody = await response.Content.ReadAsStringAsync();
-                    try
-                    {
-                        var rspx = JsonErrorResponse.Parse(responseBody);
-                        OnErrorResponse(response, rspx, string.Format("Start phase={0} failed.", State == MaintenanceState.DRAINING ? "Suspended" : "Draining"));
-                    }
-                    catch (Exception ex)
-                    {
-                        OnException(ex, string.Format("Start phase={0} failed: Unexpected response.", State == MaintenanceState.DRAINING ? "Suspended" : "Draining"), responseBody);
-                    }
-                    return false;
+                    OnException(ex, name);
                 }
             }
-            catch (Exception ex)
+            else if (canRetry)
             {
-                OnException(ex, string.Format("Start phase={0} failed.", State == MaintenanceState.DRAINING ? "Suspended" : "Draining"));
-                return false;
-            }
-        }
-
-        public async Task<bool> End(bool authIfNeeded = true)
-        {
-            if (_authToken == null)
-            {
-                if (!authIfNeeded)
-                {
-                    throw new InvalidOperationException("AuthToken=null authIfNeeded=false");
-                }
                 if (await Authenticate())
                 {
-                    authIfNeeded = false;
-                }
-                else
-                {
-                    return false;
+                    return await StartSuspended(false);
                 }
             }
-            try
+            else
             {
-                StatusText = "Requesting End...";
-                var uri = string.Format("{0}/api/Maintenance/End", Url);
-                var request = new HttpRequestMessage(HttpMethod.Post, uri);
-                request.Headers.Add(@"Authorization", "Bearer " + _authToken);
-                var response = await _httpClient.SendAsync(request);
-                if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+                StatusFailed(name);
+            }
+            return false;
+        }
+
+        public async Task<bool> End(bool canRetry = true)
+        {
+            var name = "End";
+            if (_netClient.HasAuthToken)
+            {
+                try
                 {
-                    StatusText = "End succeeded.";
-                    return true;
+                    StatusRequesting(name);
+                    switch (await _netClient.End())
+                    {
+                        case HttpStatusCode.NoContent:
+                            StatusSucceeded(name);
+                            return true;
+                        case HttpStatusCode.Unauthorized:
+                            if (canRetry)
+                            {
+                                if (await Authenticate())
+                                {
+                                    return await End(false);
+                                }
+                            }
+                            else
+                            {
+                                OnErrorResponse(name);
+                            }
+                            break;
+                        default:
+                            OnErrorResponse(name);
+                            break;
+                    }
                 }
-                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && authIfNeeded)
+                catch (Exception ex)
                 {
-                    if (!await Authenticate())
-                    {
-                        return false;
-                    }
-                    else if (!await Get(false))
-                    {
-                        return false;
-                    }
-                    else if (State == MaintenanceState.NONE)
-                    {
-                        return true;
-                    }
-                    else if (State == MaintenanceState.DRAINING || State == MaintenanceState.SUSPENDED)
-                    {
-                        return await End(false);
-                    }
-                    else
-                    {
-                        return false;
-                    }
-                }
-                else
-                {
-                    var responseBody = await response.Content.ReadAsStringAsync();
-                    try
-                    {
-                        var rspx = JsonErrorResponse.Parse(responseBody);
-                        OnErrorResponse(response, rspx, "End failed.");
-                    }
-                    catch (Exception ex)
-                    {
-                        OnException(ex, "End failed: Unexpected response.", responseBody);
-                    }
-                    return false;
+                    OnException(ex, name);
                 }
             }
-            catch (Exception ex)
+            else if (canRetry)
             {
-                OnException(ex, "End failed.");
-                return false;
+                if (await Authenticate())
+                {
+                    return await End(false);
+                }
+            }
+            else
+            {
+                StatusFailed(name);
+            }
+            return false;
+        }
+
+        private void UpdateCredentialsInPersistentStore()
+        {
+            _ps.UpdateCredentials(_netClient.Url, _netClient.TenancyName, _netClient.UserName, _netClient.Password, _netClient.AuthToken);
+            if (!UrlList.Contains(_netClient.Url))
+            {
+                UrlList.Add(_netClient.Url);
+                NotifyPropertyChanged(nameof(UrlList));
             }
         }
 
@@ -501,9 +431,9 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
-        private void OnException(Exception ex, string statusText, string responseBody = null)
+        private void OnException(Exception ex, string name)
         {
-            StatusText = statusText;
+            StatusFailed(name);
             var sb = new StringBuilder();
             sb.Append(ex.Message);
             for (ex = ex.InnerException; ex != null; ex = ex.InnerException)
@@ -511,19 +441,48 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
                 sb.AppendLine();
                 sb.Append(ex.Message);
             }
-            if (responseBody != null)
+            if (_netClient.ResponseBody != null)
             {
                 sb.AppendLine();
-                sb.AppendFormat("Response={0}", responseBody);
+                sb.AppendFormat("Response={0}", _netClient.ResponseBody);
             }
             Logs.Add(new LogRecord(sb.ToString()));
         }
 
-        private void OnErrorResponse(HttpResponseMessage rsp, ErrorResponse rspx, string statusText)
+        private void OnErrorResponse(string name)
         {
-            StatusText = statusText;
-            Logs.Add(new LogRecord("Status={0} ({1})\nErrorCode={2}\nMessage={3}",
-                (int)rsp.StatusCode, rsp.ReasonPhrase, rspx.ErrorCode, rspx.Message));
+            StatusFailed(name);
+            var sb = new StringBuilder();
+            sb.AppendFormat("Status={0} ({1})", (int)_netClient.ResponseMessage.StatusCode, _netClient.ResponseMessage.ReasonPhrase);
+            if (_netClient.ErrorResponse != null)
+            {
+                sb.AppendLine();
+                sb.AppendFormat("ErrorCode={0}", _netClient.ErrorResponse.ErrorCode);
+                sb.AppendLine();
+                sb.AppendFormat("Message={0}", _netClient.ErrorResponse.Message);
+            }
+            else if (_netClient.ResponseBody != null)
+            {
+                sb.AppendLine();
+                sb.AppendFormat("Response={0}", _netClient.ResponseBody);
+            }
+            Logs.Add(new LogRecord(sb.ToString()));
+        }
+
+        private void StatusRequesting(string name)
+        {
+            StatusText = string.Format("Requesting {0}...", name);
+            Logs.Clear();
+        }
+
+        private void StatusSucceeded(string name)
+        {
+            StatusText = string.Format("{0} succeeded.", name);
+        }
+
+        private void StatusFailed(string name)
+        {
+            StatusText = string.Format("{0} failed.", name);
         }
 
         #endregion

@@ -167,7 +167,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             }
         }
 
-        public void AddCredentials(string url, string tenancyName, string userName, string password, string token)
+        public void UpdateCredentials(string url, string tenancyName, string userName, string password, string token)
         {
             token = string.IsNullOrEmpty(token) ? string.Empty : token;
             var a = _doc.DocumentElement[AUTH];

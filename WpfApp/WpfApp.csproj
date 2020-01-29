@@ -83,6 +83,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="MaintenanceClient.cs" />
+    <Compile Include="MaintenanceNetClient.cs" />
     <Compile Include="PersistentStore.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>

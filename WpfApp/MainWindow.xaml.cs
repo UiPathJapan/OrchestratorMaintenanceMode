@@ -98,14 +98,14 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             {
                 if (_client.State == MaintenanceState.NONE)
                 {
-                    if (await _client.Start())
+                    if (await _client.StartDraining())
                     {
                         await _client.Get();
                     }
                 }
                 if (_client.State == MaintenanceState.DRAINING)
                 {
-                    if (await _client.Start())
+                    if (await _client.StartSuspended())
                     {
                         await _client.Get();
                     }
