@@ -160,6 +160,11 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
 
         #region API CALLS
 
+        public void Cancel()
+        {
+            _netClient.Cancel();
+        }
+
         public async Task<bool> Authenticate()
         {
             var name = "Authentication";

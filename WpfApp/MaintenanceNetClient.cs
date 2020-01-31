@@ -1,6 +1,7 @@
 ﻿using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace UiPathTeam.OrchestratorMaintenanceMode
@@ -19,6 +20,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
         private string _authValue;
         private string _requestUri;
         private MaintenanceResponse _maintenanceResponse;
+        private CancellationTokenSource _cts;
 
         public string Url
         {
@@ -29,7 +31,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             set
             {
                 _requestUri = value;
-                Reset();
+                ResetResponse();
             }
         }
 
@@ -134,14 +136,21 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             _authValue = null;
             _requestUri = string.Empty;
             Maintenance = null;
-            Reset();
+            _cts = new CancellationTokenSource();
+            ResetResponse();
         }
 
-        private void Reset()
+        private void ResetResponse()
         {
             ResponseMessage = null;
             ResponseBody = null;
             ErrorResponse = null;
+        }
+
+        public void Cancel()
+        {
+            _cts.Cancel();
+            _cts = new CancellationTokenSource();
         }
 
         public async Task<bool> Authenticate()
@@ -154,7 +163,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
                 _credentials = string.Format("{{\"tenancyName\":\"{0}\",\"usernameOrEmailAddress\":\"{1}\",\"password\":\"{2}\"}}", TenancyName, UserName, Password);
             }
             request.Content = new StringContent(_credentials, Encoding.UTF8, APPLICATION_JSON);
-            ResponseMessage = await _httpClient.SendAsync(request);
+            ResponseMessage = await _httpClient.SendAsync(request, _cts.Token);
             ResponseBody = await ResponseMessage.Content.ReadAsStringAsync();
             if (ResponseMessage.StatusCode == HttpStatusCode.OK)
             {
@@ -175,7 +184,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             RequestUri = string.Format("{0}/api/Maintenance/Get", Url);
             var request = new HttpRequestMessage(HttpMethod.Get, RequestUri);
             request.Headers.Add(AUTHORIZATION, _authValue);
-            ResponseMessage = await _httpClient.SendAsync(request);
+            ResponseMessage = await _httpClient.SendAsync(request, _cts.Token);
             ResponseBody = await ResponseMessage.Content.ReadAsStringAsync();
             if (ResponseMessage.StatusCode == HttpStatusCode.OK)
             {
@@ -197,7 +206,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             RequestUri = string.Format("{0}/api/Maintenance/Start?phase=Draining", Url);
             var request = new HttpRequestMessage(HttpMethod.Post, RequestUri);
             request.Headers.Add(AUTHORIZATION, _authValue);
-            ResponseMessage = await _httpClient.SendAsync(request);
+            ResponseMessage = await _httpClient.SendAsync(request, _cts.Token);
             ResponseBody = await ResponseMessage.Content.ReadAsStringAsync();
             switch (ResponseMessage.StatusCode)
             {
@@ -224,7 +233,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             }
             var request = new HttpRequestMessage(HttpMethod.Post, RequestUri);
             request.Headers.Add(AUTHORIZATION, _authValue);
-            ResponseMessage = await _httpClient.SendAsync(request);
+            ResponseMessage = await _httpClient.SendAsync(request, _cts.Token);
             ResponseBody = await ResponseMessage.Content.ReadAsStringAsync();
             switch (ResponseMessage.StatusCode)
             {
@@ -243,7 +252,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             RequestUri = string.Format("{0}/api/Maintenance/End", Url);
             var request = new HttpRequestMessage(HttpMethod.Post, RequestUri);
             request.Headers.Add(AUTHORIZATION, _authValue);
-            ResponseMessage = await _httpClient.SendAsync(request);
+            ResponseMessage = await _httpClient.SendAsync(request, _cts.Token);
             ResponseBody = await ResponseMessage.Content.ReadAsStringAsync();
             switch (ResponseMessage.StatusCode)
             {

@@ -21,6 +21,8 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
     {
         private MaintenanceClient _client;
 
+        private bool _buttonsEnabled;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -28,9 +30,9 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             _client.PropertyChanged += OnPropertyChanged;
             DataContext = _client;
             passwordBox.Password = _client.Password;
-            getButton.IsEnabled = true;
-            startButton.IsEnabled = false;
-            endButton.IsEnabled = false;
+            drainingCheckBox.IsChecked = true;
+            suspendedCheckBox.IsChecked = true;
+            UpdateButtons(true);
         }
 
         private void Window_Closed(object sender, EventArgs e)
@@ -48,35 +50,20 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
 
         private void UpdateButtons(bool enabled)
         {
-            if (!enabled)
+            _buttonsEnabled = enabled;
+            if (enabled)
+            {
+                getButton.IsEnabled = true;
+                startButton.IsEnabled = drainingCheckBox.IsChecked == true | suspendedCheckBox.IsChecked == true;
+                endButton.IsEnabled = true;
+                cancelButton.IsEnabled = false;
+            }
+            else
             {
                 getButton.IsEnabled = false;
                 startButton.IsEnabled = false;
                 endButton.IsEnabled = false;
-            }
-            else if (_client.State == MaintenanceState.NONE)
-            {
-                getButton.IsEnabled = true;
-                startButton.IsEnabled = true;
-                endButton.IsEnabled = false;
-            }
-            else if (_client.State == MaintenanceState.DRAINING)
-            {
-                getButton.IsEnabled = true;
-                startButton.IsEnabled = true;
-                endButton.IsEnabled = true;
-            }
-            else if (_client.State == MaintenanceState.SUSPENDED)
-            {
-                getButton.IsEnabled = true;
-                startButton.IsEnabled = false;
-                endButton.IsEnabled = true;
-            }
-            else
-            {
-                getButton.IsEnabled = true;
-                startButton.IsEnabled = false;
-                endButton.IsEnabled = false;
+                cancelButton.IsEnabled = true;
             }
         }
 
@@ -94,21 +81,28 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             _client.UserName = usernameTextBox.Text;
             _client.Password = passwordBox.Password;
             UpdateButtons(false);
-            if (await _client.Get())
+            if (drainingCheckBox.IsChecked == true)
             {
-                if (_client.State == MaintenanceState.NONE)
+                if (await _client.StartDraining())
                 {
-                    if (await _client.StartDraining())
+                    if (suspendedCheckBox.IsChecked == true)
+                    {
+                        if (await _client.StartSuspended())
+                        {
+                            await _client.Get();
+                        }
+                    }
+                    else
                     {
                         await _client.Get();
                     }
                 }
-                if (_client.State == MaintenanceState.DRAINING)
+            }
+            else if (suspendedCheckBox.IsChecked == true)
+            {
+                if (await _client.StartSuspended())
                 {
-                    if (await _client.StartSuspended())
-                    {
-                        await _client.Get();
-                    }
+                    await _client.Get();
                 }
             }
             UpdateButtons(true);
@@ -119,17 +113,48 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             _client.UserName = usernameTextBox.Text;
             _client.Password = passwordBox.Password;
             UpdateButtons(false);
-            if (await _client.Get())
+            if (await _client.End())
             {
-                if (_client.State == MaintenanceState.DRAINING || _client.State == MaintenanceState.SUSPENDED)
-                {
-                    if (await _client.End())
-                    {
-                        await _client.Get();
-                    }
-                }
+                await _client.Get();
             }
             UpdateButtons(true);
+        }
+
+        private void Cancel(object sender, RoutedEventArgs e)
+        {
+            _client.Cancel();
+        }
+
+        private void DrainingChecked(object sender, RoutedEventArgs e)
+        {
+            if (_buttonsEnabled)
+            {
+                startButton.IsEnabled = true;
+            }
+        }
+
+        private void DrainingUnchecked(object sender, RoutedEventArgs e)
+        {
+            if (_buttonsEnabled)
+            {
+                startButton.IsEnabled = suspendedCheckBox.IsChecked == true;
+            }
+        }
+
+        private void SuspendedChecked(object sender, RoutedEventArgs e)
+        {
+            if (_buttonsEnabled)
+            {
+                startButton.IsEnabled = true;
+            }
+        }
+
+        private void SuspendedUnchecked(object sender, RoutedEventArgs e)
+        {
+            if (_buttonsEnabled)
+            {
+                startButton.IsEnabled = drainingCheckBox.IsChecked == true;
+            }
         }
     }
 }
