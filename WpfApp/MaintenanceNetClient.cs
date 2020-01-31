@@ -89,8 +89,6 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
                 {
                     _authValue = BEARER_SP + value;
                 }
-                _authValue = string.IsNullOrEmpty(value) ? null : BEARER_SP + value;
-                
             }
         }
 
