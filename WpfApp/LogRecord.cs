@@ -3,19 +3,20 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using UiPathTeam.OrchestratorMaintenanceMode.Net;
 
 namespace UiPathTeam.OrchestratorMaintenanceMode
 {
-    public class LogRecord
+    internal class LogRecord
     {
         public DateTime Timestamp { get; set; }
 
         public string Message { get; set; }
 
-        public LogRecord(MaintenanceLogRecord record)
+        public LogRecord(MaintenanceStateLog record)
         {
             Timestamp = record.Timestamp;
-            Message = string.Format("Mode={0}", Enum.GetName(typeof(MaintenanceState), record.State));
+            Message = string.Format("Mode={0}", record.StateString);
         }
 
         public LogRecord(string message)

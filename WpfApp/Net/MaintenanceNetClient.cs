@@ -3,8 +3,9 @@ using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 
-namespace UiPathTeam.OrchestratorMaintenanceMode
+namespace UiPathTeam.OrchestratorMaintenanceMode.Net
 {
     internal class MaintenanceNetClient
     {
@@ -19,7 +20,6 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
         private string _credentials;
         private string _authValue;
         private string _requestUri;
-        private MaintenanceResponse _maintenanceResponse;
         private CancellationTokenSource _cts;
 
         public string Url
@@ -85,7 +85,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
                 if (string.IsNullOrEmpty(value))
                 {
                     _authValue = null;
-                    Maintenance = null;
+                    State = MaintenanceState.UNAVAILABLE;
                 }
                 else
                 {
@@ -104,27 +104,11 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
 
         public string ResponseBody { get; private set; }
 
-        public ErrorResponse ErrorResponse { get; private set; }
+        public object Response { get; private set; }
 
-        public MaintenanceResponse Maintenance
-        {
-            get
-            {
-                return _maintenanceResponse;
-            }
-            private set
-            {
-                if (value != null)
-                {
-                    _maintenanceResponse = value;
-                }
-                else
-                {
-                    _maintenanceResponse = null;
-                    State = MaintenanceState.UNAVAILABLE;
-                }
-            }
-        }
+        public ErrorResponse ErrorResponse => Response as ErrorResponse;
+
+        public MaintenanceSetting Maintenance => Response as MaintenanceSetting;
 
         public MaintenanceNetClient()
         {
@@ -135,7 +119,6 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             _credentials = null;
             _authValue = null;
             _requestUri = string.Empty;
-            Maintenance = null;
             _cts = new CancellationTokenSource();
             ResetResponse();
         }
@@ -144,7 +127,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
         {
             ResponseMessage = null;
             ResponseBody = null;
-            ErrorResponse = null;
+            Response = null;
         }
 
         public void Cancel()
@@ -167,41 +150,52 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             ResponseBody = await ResponseMessage.Content.ReadAsStringAsync();
             if (ResponseMessage.StatusCode == HttpStatusCode.OK)
             {
-                var rspx = JsonAuthenticateResponse.Parse(ResponseBody);
+                var rspx = JsonConvert.DeserializeObject<AjaxResponse>(ResponseBody);
                 AuthToken = rspx.Result;
                 return true;
             }
             else
             {
-                ErrorResponse = JsonErrorResponse.Parse(ResponseBody);
+                Response = JsonConvert.DeserializeObject<ErrorResponse>(ResponseBody);
                 return false;
             }
         }
 
-        public async Task<HttpStatusCode> Get()
+        public async Task<bool> Get(bool canRetry = true)
         {
-            Maintenance = null;
+            State = MaintenanceState.UNAVAILABLE;
             RequestUri = string.Format("{0}/api/Maintenance/Get", Url);
             var request = new HttpRequestMessage(HttpMethod.Get, RequestUri);
             request.Headers.Add(AUTHORIZATION, _authValue);
             ResponseMessage = await _httpClient.SendAsync(request, _cts.Token);
             ResponseBody = await ResponseMessage.Content.ReadAsStringAsync();
-            if (ResponseMessage.StatusCode == HttpStatusCode.OK)
+            switch (ResponseMessage.StatusCode)
             {
-                Maintenance = JsonMaintenanceResponse.Parse(ResponseBody);
-                State = Maintenance.State;
+                case HttpStatusCode.OK:
+                    Response = JsonConvert.DeserializeObject<MaintenanceSetting>(ResponseBody);
+                    State = Maintenance.State;
+                    return true;
+                case HttpStatusCode.Unauthorized:
+                    if (canRetry)
+                    {
+                        if (await Authenticate())
+                        {
+                            return await Get(false);
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
+                    break;
+                default:
+                    break;
             }
-            else if (ResponseMessage.StatusCode == HttpStatusCode.Unauthorized)
-            {
-            }
-            else
-            {
-                ErrorResponse = JsonErrorResponse.Parse(ResponseBody);
-            }
-            return ResponseMessage.StatusCode;
+            Response = JsonConvert.DeserializeObject<ErrorResponse>(ResponseBody);
+            return false;
         }
 
-        public async Task<HttpStatusCode> StartDraining()
+        public async Task<bool> StartDraining(bool canRetry = true)
         {
             RequestUri = string.Format("{0}/api/Maintenance/Start?phase=Draining", Url);
             var request = new HttpRequestMessage(HttpMethod.Post, RequestUri);
@@ -211,16 +205,28 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             switch (ResponseMessage.StatusCode)
             {
                 case HttpStatusCode.NoContent:
+                    return true;
                 case HttpStatusCode.Unauthorized:
+                    if (canRetry)
+                    {
+                        if (await Authenticate())
+                        {
+                            return await StartDraining(false);
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
                     break;
                 default:
-                    ErrorResponse = JsonErrorResponse.Parse(ResponseBody);
                     break;
             }
-            return ResponseMessage.StatusCode;
+            Response = JsonConvert.DeserializeObject<ErrorResponse>(ResponseBody);
+            return false;
         }
 
-        public async Task<HttpStatusCode> StartSuspended(bool isForceEnabled, bool isKillJobsEnabled)
+        public async Task<bool> StartSuspended(bool isForceEnabled, bool isKillJobsEnabled, bool canRetry = true)
         {
             RequestUri = string.Format("{0}/api/Maintenance/Start?phase=Suspended", Url);
             if (isForceEnabled)
@@ -238,16 +244,28 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             switch (ResponseMessage.StatusCode)
             {
                 case HttpStatusCode.NoContent:
+                    return true;
                 case HttpStatusCode.Unauthorized:
+                    if (canRetry)
+                    {
+                        if (await Authenticate())
+                        {
+                            return await StartSuspended(isForceEnabled, isKillJobsEnabled, false);
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
                     break;
                 default:
-                    ErrorResponse = JsonErrorResponse.Parse(ResponseBody);
                     break;
             }
-            return ResponseMessage.StatusCode;
+            Response = JsonConvert.DeserializeObject<ErrorResponse>(ResponseBody);
+            return false;
         }
 
-        public async Task<HttpStatusCode> End()
+        public async Task<bool> End(bool canRetry = true)
         {
             RequestUri = string.Format("{0}/api/Maintenance/End", Url);
             var request = new HttpRequestMessage(HttpMethod.Post, RequestUri);
@@ -257,13 +275,25 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
             switch (ResponseMessage.StatusCode)
             {
                 case HttpStatusCode.NoContent:
+                    return true;
                 case HttpStatusCode.Unauthorized:
+                    if (canRetry)
+                    {
+                        if (await Authenticate())
+                        {
+                            return await End(false);
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
                     break;
                 default:
-                    ErrorResponse = JsonErrorResponse.Parse(ResponseBody);
                     break;
             }
-            return ResponseMessage.StatusCode;
+            Response = JsonConvert.DeserializeObject<ErrorResponse>(ResponseBody);
+            return false;
         }
     }
 }

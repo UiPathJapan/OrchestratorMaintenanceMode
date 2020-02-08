@@ -5,10 +5,11 @@ using System.Collections.ObjectModel;
 using System.Net;
 using System.Text;
 using System.Threading.Tasks;
+using UiPathTeam.OrchestratorMaintenanceMode.Net;
 
 namespace UiPathTeam.OrchestratorMaintenanceMode
 {
-    public class MaintenanceClient : INotifyPropertyChanged
+    internal class MaintenanceClient : INotifyPropertyChanged
     {
         #region FIELDS
 
@@ -177,10 +178,7 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
                     StatusSucceeded(name);
                     return true;
                 }
-                else
-                {
-                    OnErrorResponse(name);
-                }
+                OnErrorResponse(name);
             }
             catch (Exception ex)
             {
@@ -201,38 +199,22 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
                 try
                 {
                     StatusRequesting(name);
-                    switch (await _netClient.Get())
+                    if (await _netClient.Get())
                     {
-                        case HttpStatusCode.OK:
-                            StatusText = string.Format(
-                                "Current Mode={0}\nJob: Stops attempted={1} Kills attempted={2}\nTriggers skipped={3}\nSystem triggers skipped={4}",
-                                Enum.GetName(typeof(MaintenanceState), _netClient.State),
-                                _netClient.Maintenance.JobStopsAttempted,
-                                _netClient.Maintenance.JobKillsAttempted,
-                                _netClient.Maintenance.TriggersSkipped,
-                                _netClient.Maintenance.SystemTriggersSkipped);
-                            foreach (var record in _netClient.Maintenance.Logs)
-                            {
-                                Logs.Add(new LogRecord(record));
-                            }
-                            return true;
-                        case HttpStatusCode.Unauthorized:
-                            if (canRetry)
-                            {
-                                if (await Authenticate())
-                                {
-                                    return await Get(false);
-                                }
-                            }
-                            else
-                            {
-                                OnErrorResponse(name);
-                            }
-                            break;
-                        default:
-                            OnErrorResponse(name);
-                            break;
+                        StatusText = string.Format(
+                            "Current Mode={0}\nJob: Stops attempted={1} Kills attempted={2}\nTriggers skipped={3}\nSystem triggers skipped={4}",
+                            _netClient.Maintenance.StateString,
+                            _netClient.Maintenance.JobStopsAttempted,
+                            _netClient.Maintenance.JobKillsAttempted,
+                            _netClient.Maintenance.TriggersSkipped,
+                            _netClient.Maintenance.SystemTriggersSkipped);
+                        foreach (var record in _netClient.Maintenance.MaintenanceLogs)
+                        {
+                            Logs.Add(new LogRecord(record));
+                        }
+                        return true;
                     }
+                    OnErrorResponse(name);
                 }
                 catch (Exception ex)
                 {
@@ -265,28 +247,12 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
                 try
                 {
                     StatusRequesting(name);
-                    switch (await _netClient.StartDraining())
+                    if (await _netClient.StartDraining())
                     {
-                        case HttpStatusCode.NoContent:
-                            StatusSucceeded(name);
-                            return true;
-                        case HttpStatusCode.Unauthorized:
-                            if (canRetry)
-                            {
-                                if (await Authenticate())
-                                {
-                                    return await StartDraining(false);
-                                }
-                            }
-                            else
-                            {
-                                OnErrorResponse(name);
-                            }
-                            break;
-                        default:
-                            OnErrorResponse(name);
-                            break;
+                        StatusSucceeded(name);
+                        return true;
                     }
+                    OnErrorResponse(name);
                 }
                 catch (Exception ex)
                 {
@@ -323,28 +289,12 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
                         name = name.Replace(")", "/KillJobs)");
                     }
                     StatusRequesting(name);
-                    switch (await _netClient.StartSuspended(IsForceEnabled, IsKillJobsEnabled))
+                    if (await _netClient.StartSuspended(IsForceEnabled, IsKillJobsEnabled))
                     {
-                        case HttpStatusCode.NoContent:
-                            StatusSucceeded(name);
-                            return true;
-                        case HttpStatusCode.Unauthorized:
-                            if (canRetry)
-                            {
-                                if (await Authenticate())
-                                {
-                                    return await StartSuspended(false);
-                                }
-                            }
-                            else
-                            {
-                                OnErrorResponse(name);
-                            }
-                            break;
-                        default:
-                            OnErrorResponse(name);
-                            break;
+                        StatusSucceeded(name);
+                        return true;
                     }
+                    OnErrorResponse(name);
                 }
                 catch (Exception ex)
                 {
@@ -373,28 +323,12 @@ namespace UiPathTeam.OrchestratorMaintenanceMode
                 try
                 {
                     StatusRequesting(name);
-                    switch (await _netClient.End())
+                    if (await _netClient.End())
                     {
-                        case HttpStatusCode.NoContent:
-                            StatusSucceeded(name);
-                            return true;
-                        case HttpStatusCode.Unauthorized:
-                            if (canRetry)
-                            {
-                                if (await Authenticate())
-                                {
-                                    return await End(false);
-                                }
-                            }
-                            else
-                            {
-                                OnErrorResponse(name);
-                            }
-                            break;
-                        default:
-                            OnErrorResponse(name);
-                            break;
+                        StatusSucceeded(name);
+                        return true;
                     }
+                    OnErrorResponse(name);
                 }
                 catch (Exception ex)
                 {

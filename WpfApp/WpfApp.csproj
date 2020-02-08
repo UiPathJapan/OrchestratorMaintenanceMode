@@ -66,15 +66,12 @@
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="AuthenticateResponse.cs" />
-    <Compile Include="ErrorResponse.cs" />
-    <Compile Include="JsonAuthenticateResponse.cs" />
-    <Compile Include="JsonErrorResponse.cs" />
-    <Compile Include="JsonMaintenanceResponse.cs" />
+    <Compile Include="Net\AjaxResponse.cs" />
+    <Compile Include="Net\ErrorInfo.cs" />
+    <Compile Include="Net\ErrorResponse.cs" />
     <Compile Include="LogRecord.cs" />
-    <Compile Include="MaintenanceResponse.cs" />
-    <Compile Include="MaintenanceLogRecord.cs" />
-    <Compile Include="MaintenanceState.cs" />
+    <Compile Include="Net\MaintenanceSetting.cs" />
+    <Compile Include="Net\MaintenanceState.cs" />
     <Compile Include="MaintenanceTimestampConverter.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
@@ -83,7 +80,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="MaintenanceClient.cs" />
-    <Compile Include="MaintenanceNetClient.cs" />
+    <Compile Include="Net\MaintenanceNetClient.cs" />
+    <Compile Include="Net\MaintenanceStateLog.cs" />
+    <Compile Include="Net\ValidationErrorInfo.cs" />
     <Compile Include="PersistentStore.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>

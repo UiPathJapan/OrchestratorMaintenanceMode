@@ -1,10 +1,11 @@
-﻿namespace UiPathTeam.OrchestratorMaintenanceMode
+﻿namespace UiPathTeam.OrchestratorMaintenanceMode.Net
 {
     public enum MaintenanceState
     {
         NONE,
         DRAINING,
         SUSPENDED,
+        UNKNOWN,
         UNAVAILABLE
     }
 
@@ -21,9 +22,13 @@
             {
                 return MaintenanceState.SUSPENDED;
             }
-            else
+            else if (value == "none")
             {
                 return MaintenanceState.NONE;
+            }
+            else
+            {
+                return MaintenanceState.UNKNOWN;
             }
         }
     }
